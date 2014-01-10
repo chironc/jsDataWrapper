@@ -672,90 +672,90 @@ var exports = exports || {};//兼容浏览器
 exports.createEntityManager = createEntityManager;
 
 
-var test_attributes = {
-    checkData : {
-        type : 'Function',
-        defaultData : function(){    //如果没有这项，默认为 function(){};
-            console.log('checkData');
-        }
-    },
-    checkData2 : function() {      //等同于上面的checkData
-        console.log('checkData2');
-    },
-    isMan : {
-        type : 'Boolean',
-        shortKey : 'm',//缩减存储空间
-        defaultData : true,      //如果没有这项，默认为false
-        notExport : true,
-    },
-    level : {
-        type : 'Number',
-        shortKey : 'l',//缩减存储空间
-        defaultData : 1        //如果没有这项，默认为0
-    },
-    nickname : {
-        type : 'String',
-        shortKey : 'na',//缩减存储空间
-        defaultData : 'unknow_name'
-    },
-    params : {
-        type : 'Object',
-        shortKey : 'p',//缩减存储空间
-        defaultData : {         // 如果没有这项，默认为{},会深度复制，不建议使用此类型。
-            source : ''
-        }
-    },
-    friends : {
-        type : 'Array',
-        shortKey : 'f',//缩减存储空间
-        defaultData : []         // 如果没有这项，默认为[],会深度复制，不建议使用此类型。每次更变会下发完整数据到客户端。
-    },
-    convert : {
-        type : 'Struct',   
-        attributes : {
-            en : 'String',
-            cn : {
-                type : 'String'
-            },
-            tt : function() { 
-                console.log('tt');
-            }
-        }
-    },
-    en_to_cn : {
-        type : 'StructObject',    // T_StructObject有item也有attributes
-        item : 'String'
-    },
-    cards : {
-        type : 'StructObject',    // T_StructObject有item也有attributes
+// var test_attributes = {
+//     checkData : {
+//         type : 'Function',
+//         defaultData : function(){    //如果没有这项，默认为 function(){};
+//             console.log('checkData');
+//         }
+//     },
+//     checkData2 : function() {      //等同于上面的checkData
+//         console.log('checkData2');
+//     },
+//     isMan : {
+//         type : 'Boolean',
+//         shortKey : 'm',//缩减存储空间
+//         defaultData : true,      //如果没有这项，默认为false
+//         notExport : true,
+//     },
+//     level : {
+//         type : 'Number',
+//         shortKey : 'l',//缩减存储空间
+//         defaultData : 1        //如果没有这项，默认为0
+//     },
+//     nickname : {
+//         type : 'String',
+//         shortKey : 'na',//缩减存储空间
+//         defaultData : 'unknow_name'
+//     },
+//     params : {
+//         type : 'Object',
+//         shortKey : 'p',//缩减存储空间
+//         defaultData : {         // 如果没有这项，默认为{},会深度复制，不建议使用此类型。
+//             source : ''
+//         }
+//     },
+//     friends : {
+//         type : 'Array',
+//         shortKey : 'f',//缩减存储空间
+//         defaultData : []         // 如果没有这项，默认为[],会深度复制，不建议使用此类型。每次更变会下发完整数据到客户端。
+//     },
+//     convert : {
+//         type : 'Struct',   
+//         attributes : {
+//             en : 'String',
+//             cn : {
+//                 type : 'String'
+//             },
+//             tt : function() { 
+//                 console.log('tt');
+//             }
+//         }
+//     },
+//     en_to_cn : {
+//         type : 'StructObject',    // T_StructObject有item也有attributes
+//         item : 'String'
+//     },
+//     cards : {
+//         type : 'StructObject',    // T_StructObject有item也有attributes
 
-        attributes : {
-            count : 'Number'
-        },
-        item : {
-            type : 'StructObject',
-            item : {
-                type : 'Struct',
-                attributes : {
-                    id : {type:'String',notExport : true},
-                    count : 'Number'
-                },
+//         attributes : {
+//             count : 'Number'
+//         },
+//         item : {
+//             type : 'StructObject',
+//             item : {
+//                 type : 'Struct',
+//                 attributes : {
+//                     id : {type:'String',notExport : true},
+//                     count : 'Number'
+//                 },
                 
-            }
-        }
-    },
-    formationNames : {
-        type : 'StructArray',  //采用object来存数组，只追加id的object项，有一个专门的repair函数。每次登陆的时候修正object的id，例如{0:'1',1:'2',3:'4'},等同于['1','2','4'],
-        //没有defaultData选项，
-        item : {
-            type : 'StructObject',//只支持StructObject,StructArray,Struct
-            attributes : {
-                count : 'Number'
-            },
-            item : 'String',
-        }
-    },
-}
+//             }
+//         }
+//     },
+//     formationNames : {
+//         type : 'StructArray',  //采用object来存数组，只追加id的object项，有一个专门的repair函数。每次登陆的时候修正object的id，例如{0:'1',1:'2',3:'4'},等同于['1','2','4'],
+//         //没有defaultData选项，
+//         item : {
+//             type : 'StructObject',//只支持StructObject,StructArray,Struct
+//             attributes : {
+//                 count : 'Number'
+//             },
+//             item : 'String',
+//         }
+//     },
+// }
 
 // var manager = createEntityManager(test_attributes);
 // var entity = manager.createEntity({});
