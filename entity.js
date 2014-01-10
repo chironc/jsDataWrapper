@@ -178,7 +178,7 @@ function createEntityManager(attribute,item,propName) {
         typeForKey[prop] = 'Normal';
         var defaultData = attr.defaultData || 0;
         utils.defineGetSetProperty(entity, prop, function () {
-            return this._data[key] || defaultData;
+            return (this._data[key] === undefined)?defaultData:this._data[key];
         }, function (val) {
             if (!attr.notExport) changes[key] = 1;
             val = utils.isNumber(val)?val:parseFloat(val);
@@ -199,7 +199,7 @@ function createEntityManager(attribute,item,propName) {
         typeForKey[prop] = 'Normal';
         var defaultData = attr.defaultData || '';
         utils.defineGetSetProperty(entity, prop, function () {
-            return this._data[key] || defaultData;
+            return (this._data[key] === undefined)?defaultData:this._data[key];
         }, function (val) {
             if (!attr.notExport) changes[key] = 1;
             val = utils.isString(val)?val:('' + val);
@@ -222,7 +222,7 @@ function createEntityManager(attribute,item,propName) {
             if (!attr.notExport && !changes[key]) {
                 changes[key] = JSON.stringify(this._data[key]);
             }
-            return this._data[key]?this._data[key]:(this._data[key] = JSON.parse(defaultData));
+            return (this._data[key] === undefined)?this._data[key]:(this._data[key] = JSON.parse(defaultData));
         }, function (val) {
             if (!utils.isObject(val)) 
                 throw val + ' not a object';
@@ -242,7 +242,7 @@ function createEntityManager(attribute,item,propName) {
             if (!changes[key]) {
                 changes[key] = JSON.stringify(this._data[key]);
             }
-            return this._data[key]?this._data[key]:(this._data[key] = JSON.parse(defaultData));
+            return (this._data[key] === undefined)?this._data[key]:(this._data[key] = JSON.parse(defaultData));
         }, function (val) {
             if (!utils.isArray(val)) 
                 throw val + ' not a array';
@@ -262,7 +262,7 @@ function createEntityManager(attribute,item,propName) {
             throw 'attributes 必须存在';
         var subManager = createEntityManager(attr.attributes,undefined,prop);
         utils.defineGetOnlyProperty(entity, prop, function () {
-            if (!this._data[key])
+            if (this._data[key] === undefined)
                 this._data[key] = {};
             //sub_changes[key] = prop;
             sub_entity_list[prop] = sub_entity_list[prop] || subManager.createEntity(this._data[key]);
@@ -281,7 +281,7 @@ function createEntityManager(attribute,item,propName) {
         var item = utils.isString(attr.item)?{type:attr.item}:(attr.item||{type:'String'});
         var subManager = createEntityManager(attributes,item,prop);
         utils.defineGetOnlyProperty(entity, prop, function () {
-            if (!this._data[key])
+            if (this._data[key] === undefined)
                 this._data[key] = {};
             //sub_changes[key] = prop;
             sub_entity_list[prop] = sub_entity_list[prop] || subManager.createEntity(this._data[key]);
@@ -345,8 +345,12 @@ function createEntityManager(attribute,item,propName) {
                 var indexArray = this._i;
                 for (var i=0;i<indexArray.length;i++){
                     var val = this._index(i);
-                    if (fn(i,val)) {
+                    var ret = fn(i,val) || '';
+                    if (ret.indexOf('remove')!=-1) {
                         this._removeArrayItem(i--);
+                    }
+                    if (ret.indexOf('break')!=-1) {
+                        break;
                     }
                 }
             },
@@ -354,8 +358,12 @@ function createEntityManager(attribute,item,propName) {
                 var indexArray = this._i;
                 for (var i=indexArray.length-1;i>=0;i--){
                     var val = this._index(i);
-                    if (fn(i,val)) {
+                    var ret = fn(i,val) || '';
+                    if (ret.indexOf('remove')!=-1) {
                         this._removeArrayItem(i);
+                    }
+                    if (ret.indexOf('break')!=-1) {
+                        break;
                     }
                 }
             },
@@ -375,7 +383,7 @@ function createEntityManager(attribute,item,propName) {
         }
         var subManager = createEntityManager(arrayAttribute,attr.item,prop);
         utils.defineGetOnlyProperty(entity, prop, function () {
-            if (!this._data[key])
+            if (this._data[key] === undefined)
                 this._data[key] = {};//_index。索引
             //sub_changes[key] = prop;
             sub_entity_list[prop] = sub_entity_list[prop] || subManager.createEntity(this._data[key]);
@@ -491,7 +499,7 @@ function createEntityManager(attribute,item,propName) {
     }
     function createHasItemProperty(entity) {
         function hasItem(key) {
-            if (!attribute[key] && entity[key]!==undefined && key != 'createItem' && key != 'hasItem' && key != 'keyForMe' && key != 'deleteItem' && key != 'releaseMe')
+            if (!attribute[key] && entity[key]!==undefined && key != 'createItem' && key != 'hasItem' && key != 'keyForMe' && key != 'deleteItem' && key != 'releaseMe' && key != 'forEachItem' && key != 'exportData')
                 return true;
             return false;
         }
@@ -508,6 +516,24 @@ function createEntityManager(attribute,item,propName) {
             },true,true);
         }
         utils.defineValueProperty(entity,'_setItem',setItem,false,false,false);//不可写，不可枚举，可修改配置。
+    }
+    function createForEachProperty(entity) {
+        function forEachItem(fn) {
+            fn = fn || utils.emptyFunction;
+            for (var lKey in entity) {//不能根据data，因为default不显示
+                if (attribute[lKey]) continue; 
+                if (lKey == 'createItem' || lKey == 'hasItem' || lKey == 'keyForMe' || lKey == 'deleteItem' || lKey == 'releaseMe' || lKey == 'forEachItem' || lKey == 'exportData') continue;
+                console.log(lKey);
+                var ret = fn(lKey,entity[lKey]) || '';
+                if (ret.indexOf('remove')!=-1) {
+                    entity.deleteItem(lKey);
+                }
+                if (ret.indexOf('break')!=-1) {//返回true中断
+                    break;
+                }
+            }
+        }
+        utils.defineValueProperty(entity,'forEachItem',forEachItem,false,true,false);//不可写，不可枚举，可修改配置。
     }
     function createCountProperty(entity) {
         function count() {
@@ -597,7 +623,7 @@ function createEntityManager(attribute,item,propName) {
                     if (!entity.hasItem(key)) {
                         entity.createItem(key);
                     }
-                    entity[key].mergeChanges(val);
+                    entity[key].mergeChanges?entity[key].mergeChanges(val):(entity[key] = val);
                 } else {
                     console.log('error changes');
                 }
@@ -621,7 +647,7 @@ function createEntityManager(attribute,item,propName) {
                 try {
                     entity[key] = value;
                 }catch(e){}
-           }
+            }
             return entity[key];
         };
         createSubEntityProperty(entity);
@@ -638,6 +664,7 @@ function createEntityManager(attribute,item,propName) {
             createDeleteItemProperty(entity);
             createCreateItemProperty(entity);
             createHasItemProperty(entity);
+            createForEachProperty(entity);
         }
         if (attribute._i && attribute._l && attribute._index) {
             //数组增加一个加入的接口
@@ -673,12 +700,28 @@ function createEntityManager(attribute,item,propName) {
         } 
         return entity;
     }
+    function checkSubItems(entity) {
+        //只需要检查一级
+        if (!item) return;//不存在item，也就不存在这次检查
+        var data = entity._data;
+        for (var key in data) {
+            var wholeKey = shortKeyToWholeKey[key] || key;//兼容itemKey
+            if (!attribute[wholeKey] && item ) {
+                entity.createItem(key);
+                entity[key].mergeChanges?entity[key].mergeChanges(data[key]):(entity[key] = data[key]);
+            }
+        }
+        
+        
+    }
     function dequeueEntity(data) {
         var entity = entity_list.shift();
         if (!entity) {
             entity = createEntity();
         }
+
         entity._data = data;
+        checkSubItems(entity);
         return entity;
     }
     return { createEntity : dequeueEntity }
@@ -799,10 +842,23 @@ exports.createEntityManager = createEntityManager;
 // console.log('f1 is my friend:',!!entity.friends2['f1']);
 // entity.friends2.createItem('f1');//默认值为1
 // console.log('f1 is my friend:',!!entity.friends2['f1']);
-// entity.friends2.f1 = 0;//改0也是可以的。
+
+// entity.friends2['f1'] = 0;//改0也是可以的。
 // entity.friends2('f2');//尝试访问f2，不存在返回undefined;
-// entity.friends2('f2',true);//不存在则创建，
+// entity.friends2('f2',1);//创建并赋值。
 // entity._inspect();
+
+// entity.friends2.forEachItem(function(key,val){
+//     console.log(key,val);
+//     return 'break';//中断
+// });
+// entity.friends2.forEachItem(function(key,val){
+//     console.log(key,val);
+//     return 'break|remove';//中断
+// });
+// entity.friends2.forEachItem(function(key,val){
+//     console.log(key,val);
+// });
 
 // console.log('quests.count:',entity.quests.count);
 // var item = entity.quests.newItem();
