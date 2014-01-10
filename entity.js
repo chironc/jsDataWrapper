@@ -168,6 +168,7 @@ function createEntityManager(attribute,item,propName) {
                 this._data[key] = val;
             }
         },true,configurable || false);
+        return true;
     }
     function createNumberProperty(entity,prop,attr,configurable) {
         var changes = entity._changes;
@@ -188,6 +189,7 @@ function createEntityManager(attribute,item,propName) {
                 this._data[key] = val;
             }
         },true,configurable || false);
+        return true;
     }
     function createStringProperty(entity,prop,attr,configurable) {
         var changes = entity._changes;
@@ -207,6 +209,7 @@ function createEntityManager(attribute,item,propName) {
                 this._data[key] = val;
             }
         },true,configurable || false);
+        return true;
     }
     function createObjectProperty(entity,prop,attr,configurable) {
         var changes = entity._changes;
@@ -226,6 +229,7 @@ function createEntityManager(attribute,item,propName) {
             changes[key] = 1;
             this._data[key] = val;
         },true,configurable || false);
+        return true;
     }
     function createArrayProperty(entity,prop,attr,configurable) {
         var changes = entity._changes;
@@ -245,6 +249,7 @@ function createEntityManager(attribute,item,propName) {
             if (!attr.notExport) changes[key] = 1;
             this._data[key] = val;
         },true,configurable || false);
+        return true;
     }
     function createStructProperty(entity,prop,attr,configurable) {
         //var sub_changes = entity._sub_changes;
@@ -253,8 +258,9 @@ function createEntityManager(attribute,item,propName) {
         shortKeyToWholeKey[key] = prop;
         wholeKeyToShortKey[prop] = key;
         typeForKey[prop] = 'Struct';
-        var attributes = attr.attributes || {};
-        var subManager = createEntityManager(attributes,undefined,prop);
+        if (!attr.attributes || !utils.isObject(attr.attributes))
+            throw 'attributes 必须存在';
+        var subManager = createEntityManager(attr.attributes,undefined,prop);
         utils.defineGetOnlyProperty(entity, prop, function () {
             if (!this._data[key])
                 this._data[key] = {};
@@ -262,6 +268,7 @@ function createEntityManager(attribute,item,propName) {
             sub_entity_list[prop] = sub_entity_list[prop] || subManager.createEntity(this._data[key]);
             return sub_entity_list[prop];
         },true,configurable || false);
+        return true;
     }
     function createStructObjectProperty(entity,prop,attr,configurable) {
         //var sub_changes = entity._sub_changes;
@@ -280,6 +287,7 @@ function createEntityManager(attribute,item,propName) {
             sub_entity_list[prop] = sub_entity_list[prop] || subManager.createEntity(this._data[key]);
             return sub_entity_list[prop];
         },true,configurable || false);
+        return true;
     }
     function createStructArrayProperty(entity,prop,attr,configurable) {
         //var sub_changes = entity._sub_changes;
@@ -308,7 +316,7 @@ function createEntityManager(attribute,item,propName) {
                 }
             },
             push : function() {
-                this.splice.apply(this,[this.count(),0].concat(Array.prototype.slice.call(arguments,0)));
+                this.splice.apply(this,[this.count,0].concat(Array.prototype.slice.call(arguments,0)));
             },
             sort : function(fn) {
                 var self = this;
@@ -359,9 +367,9 @@ function createEntityManager(attribute,item,propName) {
                 return undefined;
                 //实现自定义索引器
             },
-            count : function() {
-                return this._i.length;
-            },
+            // count : function() {
+            //     return this._i.length;
+            // },
             _i : 'Array',
             _l : 'Number',
         }
@@ -373,6 +381,7 @@ function createEntityManager(attribute,item,propName) {
             sub_entity_list[prop] = sub_entity_list[prop] || subManager.createEntity(this._data[key]);
             return sub_entity_list[prop];
         },true,configurable || false);
+        return true;
     }
 
     function createDataProperty(entity) {
@@ -446,15 +455,15 @@ function createEntityManager(attribute,item,propName) {
                 throw 'already exists key:' + key;
 
             if (type === 'Boolean')
-                createBooleanProperty(entity,key,item,true) && utils.isBoolean(newVal) && entity[key] = newVal;
+                createBooleanProperty(entity,key,item,true) && utils.isBoolean(newVal) && (entity[key] = newVal);
             else if (type === 'Number')
-                createNumberProperty(entity,key,item,true) && utils.isNumber(newVal) && entity[key] = newVal;
+                createNumberProperty(entity,key,item,true) && utils.isNumber(newVal) && (entity[key] = newVal);
             else if (type === 'String')
-                createStringProperty(entity,key,item,true) && utils.isString(newVal) && entity[key] = newVal;
+                createStringProperty(entity,key,item,true) && utils.isString(newVal) && (entity[key] = newVal);
             else if (type === 'Object')
-                createObjectProperty(entity,key,item,true) && utils.isObject(newVal) && entity[key] = newVal;
+                createObjectProperty(entity,key,item,true) && utils.isObject(newVal) && (entity[key] = newVal);
             else if (type === 'Array')
-                createArrayProperty(entity,key,item,true) && utils.isArray(newVal) && entity[key] = newVal;
+                createArrayProperty(entity,key,item,true) && utils.isArray(newVal) && (entity[key] = newVal);
             else if (newVal !== undefined) 
                 throw 'not support set struct value';
             else if (type === 'Struct') 
@@ -499,6 +508,12 @@ function createEntityManager(attribute,item,propName) {
             },true,true);
         }
         utils.defineValueProperty(entity,'_setItem',setItem,false,false,false);//不可写，不可枚举，可修改配置。
+    }
+    function createCountProperty(entity) {
+        function count() {
+            return entity._data._i.length;
+        }
+        utils.defineGetOnlyProperty(entity,'count',count,false,false);//不可写，不可枚举，可修改配置。
     }
     function createRebuildArrayProperty(entity) {
         function rebuildArray() {
@@ -629,6 +644,7 @@ function createEntityManager(attribute,item,propName) {
             createSetItemProperty(entity);
             createNewItemProperty(entity);
             createRebuildArrayProperty(entity);
+            createCountProperty(entity);
         }
         
         for (var key in attribute) {
@@ -672,68 +688,67 @@ var exports = exports || {};//兼容浏览器
 exports.createEntityManager = createEntityManager;
 
 
-// var test_attributes = {
-//     checkData : {
-//         type : 'Function',
-//         defaultData : function(){    //如果没有这项，默认为 function(){};
-//             console.log('checkData');
-//         }
+
+// var attributes = {
+//     isMan : {                           //isMan将作为可访问名字。
+//         type : 'Boolean',               //表示isMan属性是布尔类型，布尔类型只支持设置值为true,false,'true','false',设置其他值将会抛出异常，区分大小写。
+//         shortKey : 'm',                 //实际数据采用m作为key，即{m:1}
+//         defaultData : true,             //如果没有这项，默认为false,当没有修改此属性值时，读取此项作为默认，同时不会存储到实际数据中。
+//         notExport : true,               //此项表示exportData或getChanges时不输出此项数据，可用于屏蔽一些服务端不希望给客户端看到的数据。
 //     },
-//     checkData2 : function() {      //等同于上面的checkData
-//         console.log('checkData2');
+//     checkData : {                       //checkData将作为可访问名字。
+//         type : 'Function',              //表示checkData是一个函数。
+//         defaultData : function(){}      //如果没有这项，默认为 function(){};
 //     },
-//     isMan : {
-//         type : 'Boolean',
-//         shortKey : 'm',//缩减存储空间
-//         defaultData : true,      //如果没有这项，默认为false
-//         notExport : true,
+//     checkData2 : function() {           //等同于上面的checkData
+//         this.isMan = true;              //this指针指向同级的对象。
 //     },
 //     level : {
-//         type : 'Number',
-//         shortKey : 'l',//缩减存储空间
-//         defaultData : 1        //如果没有这项，默认为0
+//         type : 'Number',                //表示数据的类型为数值。字符串将会尝试parseFloat转换。返回NaN则抛出异常。
+//         defaultData : 1                 //如果没有这项，默认为0
 //     },
-//     nickname : {
-//         type : 'String',
-//         shortKey : 'na',//缩减存储空间
-//         defaultData : 'unknow_name'
-//     },
-//     params : {
-//         type : 'Object',
-//         shortKey : 'p',//缩减存储空间
-//         defaultData : {         // 如果没有这项，默认为{},会深度复制，不建议使用此类型。
-//             source : ''
+//     nickname : 'String',                //字符串类型，等同于nickname:{type:'String'},默认值为''。
+//     third_info : 'Object',              //简单对象类型。与上一行同理。默认值{}
+//     friends : 'Array',                  //简单数组类型，默认值:[],未实现更新算法，所以当数组发生改变，则会完整下发。不建议存储大数组。
+//     gameName : {
+//         type : 'Struct',                //带属性结构，必须同级存在attributes对象，
+//         attributes : {                  //此对象内容编写规范就是当前例子，即允许递归。对象的子对象的概念。
+//             en : 'String',
+//             cn : 'String'
 //         }
 //     },
-//     friends : {
-//         type : 'Array',
-//         shortKey : 'f',//缩减存储空间
-//         defaultData : []         // 如果没有这项，默认为[],会深度复制，不建议使用此类型。每次更变会下发完整数据到客户端。
+//     friends2 : {                        //带属性和任意key对象的结构，attributes可选，item可选，item默认为'String'即{type:'String'},item的编写规则等同于attributes下任意一项的内容。
+//         type : 'StructObject',          //例子是一个另一种方式表示好友，避免大数组，同时可以方便判断是否我的好友。
+//         item : {type:'Number',defaultData:1}
 //     },
-//     convert : {
-//         type : 'Struct',   
-//         attributes : {
-//             en : 'String',
-//             cn : {
-//                 type : 'String'
-//             },
-//             tt : function() { 
-//                 console.log('tt');
+//     quests : {                          
+//         type : 'StructArray',           //用对象模拟的数组，
+//         item : {                        //必选项，表示每个元素的内容
+//             type : 'Struct',            //Struct，StructArray，StructObject三选一。
+//             //notExport : true,         //支持item带notExport标识表示不导出。
+//             attributes : {
+//                 type : 'String',        //此type不属于我们结构中的关键字，是支持的。
+//                 id   : 'String',
+//                 time : 'Number',
+//                 state: 'Number',
+//                 "@x" : 'String',        //支持特殊命名。
+//                 param : {
+//                     type : 'Object',
+//                     notExport : true
+//                 }
 //             }
 //         }
 //     },
-//     en_to_cn : {
-//         type : 'StructObject',    // T_StructObject有item也有attributes
-//         item : 'String'
-//     },
-//     cards : {
-//         type : 'StructObject',    // T_StructObject有item也有attributes
-
+//     cards : {                           //一个多层复杂例子  
+//         type : 'StructObject',          //StructObject同时支持attribute和item
 //         attributes : {
-//             count : 'Number'
+//             count : 'Number',
 //         },
 //         item : {
 //             type : 'StructObject',
+//             attributes : {
+//                 count : 'Number',
+//             },
 //             item : {
 //                 type : 'Struct',
 //                 attributes : {
@@ -743,165 +758,78 @@ exports.createEntityManager = createEntityManager;
                 
 //             }
 //         }
-//     },
-//     formationNames : {
-//         type : 'StructArray',  //采用object来存数组，只追加id的object项，有一个专门的repair函数。每次登陆的时候修正object的id，例如{0:'1',1:'2',3:'4'},等同于['1','2','4'],
-//         //没有defaultData选项，
-//         item : {
-//             type : 'StructObject',//只支持StructObject,StructArray,Struct
-//             attributes : {
-//                 count : 'Number'
-//             },
-//             item : 'String',
-//         }
-//     },
+//     }
 // }
 
-// var manager = createEntityManager(test_attributes);
-// var entity = manager.createEntity({});
-// entity.isMan = true;
-// entity.cards('asfsdf',true)('test',true).id = '12323';
-// entity.cards('asfsdf',true)('test',true).count = 1024;
-// console.log(JSON.stringify(entity.getChanges()));
+// //var createEntityManager = require('entity').createEntityManager;
+// var manager = createEntityManager(attributes);
+// var realStorage = {m:1};
+// var entity = manager.createEntity(realStorage);//从数据库读数据。创建对象。
+
+// console.log('entity.isMan == true :',entity.isMan == true);//m是数据缩写，对应的就是isMan。而boolean存储的是0,1，1表示true，
+// entity._inspect();//输出用长名词的对象结构，包含解析所有默认值，由于console.log(entity)只能输出一堆getter,setter,特意设计此函数。
+// console.log('entity._data == realStorage :',entity._data == realStorage);
+// console.log(realStorage,entity.exportData());//不完全一样。exportData根据notExport标记生成。
 // entity.level = 10;
-// entity.convert.en = '123213';
-// entity('cards')('test',true)('test_2',true).count = 10;
-// entity.cards.test.test_2.id = 'serer';
+// var changeLog = entity.getChanges();//返回距离上一次getChanges后的改动。
+// console.log(changeLog);
 
-// // entity._inspect();
+// var entity2 = manager.createEntity({});//创建一个新对象
+// entity2.mergeChanges(changeLog);//合并更新到另一个entity。例如客户端entity。或另一个服务器的entity。
+// entity2._inspect();
 
-// var entity2 = manager.createEntity({});
-// entity2.mergeChanges(entity.getChanges());
-// utils.inspect(entity2._data,10);
-
-// entity.friends.push('sdfdee');
-// entity.friends = [];
-
-
-//
-//// entity.convert.cn = '123213';
-// console.log(entity.convert('en'));
-// entity.convert('en','33333333');
-// entity('convert').en
-// console.log(entity('convert').en);
-// console.log(entity.convert.keyForMe);
-// entity.convert.tt();
-
-// entity.en_to_cn('test1','value1');
-// entity.en_to_cn.createItem('test2').test2 = '3234234';
-// entity.en_to_cn('test2','333331111111');
-// entity.en_to_cn.deleteItem('test1');
-// console.log(entity.en_to_cn.hasItem('test1'));
-// console.log(entity.en_to_cn.hasItem('test2'));
-//entity.en_to_cn.test2 = '3333333333';
-// console.log(entity.en_to_cn.hasItem('test1'));
-// console.log(entity.en_to_cn.test2);
-
-// entity.cards.count = 1;
-// entity.cards.createItem('t1').t1.createItem('t2').id = 1;
-// entity.cards.t1.t2.count = 10;
-
-// for (var i=0; i< 10; i++) {
-//     var item = entity.formationNames.newItem();
-//     item.count = i*30;
-//     entity.formationNames.push(item);
-// }
-// entity.formationNames.splice(1,1);
-// entity.formationNames.splice(5,2);
-// entity.formationNames.rebuildArray();
-
-// console.log(entity.getChanges());
-// entity.formationNames('0').count = 10;
-// console.log(entity.getChanges());
-// entity.formationNames('0').count = 0;
-// console.log(entity.getChanges());
-// entity.formationNames.splice(0,1);
-// console.log(entity.getChanges());
-// console.log(entity.formationNames('1').count);
-
-// var item = entity.formationNames.newItem();
-// var item2 = entity.formationNames.newItem();
-// item.count = 10;
-// item2.count = 20;
-// //
-// entity.formationNames.push(item2);
-// entity.formationNames.push(item);
-// entity.formationNames.splice(1,1);
-
-
-// test_attributes._inspect();
-
-// entity.releaseMe();
-// test_attributes._inspect();
-
-
-
-// console.log('new entity');
-// entity = manager.createEntity({});
-// entity.cards.count = 1;
-// entity.cards.createItem('t1').t1.createItem('t2').id = 1;
-// entity.cards.t1.t2.count = 10;
-
-// var item = entity.formationNames.newItem();
-// item.count = 10;
-// test_attributes._inspect();
-// var entity2 = manager.createEntity({});
-// var ch = entity.getChanges();
-// console.log(ch);
-// entity2.mergeChanges(ch);
-// console.log(entity2._data);
-
-// entity.mergeChanges({l:30,convert:{cn:'sdfsdfsdfsdf'}});
-// console.log(entity.level);
-
-// entity.mergeChanges({l:30,convert:{cn:'sdfsdfsdfsdf'}});
-
-// item.createItem('test').test = 'sdfsdfdsf';
-// var item2 = entity.formationNames.newItem();
-// item2.count = 20;
-// var item3 = entity.formationNames.newItem();
-// item3.count = 30;
-// var item4 = entity.formationNames.newItem();
-// item4.count = 100;
-// var item5 = entity.formationNames.newItem();
-// item5.count = 50;
-// console.log(item5.getChanges());
-// entity.formationNames.push(item2,item,item3,item4,item5);
-// var o = entity.getChanges();
-// console.log(o);
-// entity.formationNames.reverse();
-// var o = entity.getChanges();
-// console.log(o);
-// entity.formationNames('1');
-// var o = entity.getChanges();
-// console.log(o);
-// entity.formationNames.splice(1,1);
-// var o = entity.getChanges();
-// console.log(o);
-
-
-// entity.formationNames.forEach(function(i,item){
-//     console.log(i);
-//     console.log(item.count);
-// });
-// // entity.formationNames.reverse();
-// entity.formationNames.forEach(function(i,item){
-//     console.log(i);
-//     if (item.count == 10)return true;
-// });
-// console.log(entity.formationNames('1').count);
-
-// var item6 = entity.formationNames.newItem();
-// item6.count = 60;
-// entity.formationNames.unshift(item6);
-// entity.formationNames.sort(function(a,b){
-//     return  - a.count + b.count;
-// });
-//console.log(entity.formationNames.count());
-
-//entity.releaseMe();
+// entity.third_info.platform = '360';
+// entity.third_info.account = 'xxxx';
 // entity._inspect();
-// utils.inspect(entity._data,10);
-// console.log(entity._data);
 
+// entity.third_info = {
+//     platform : 'tongbu'
+// }
+// entity._inspect();
+
+// entity.gameName.cn = '好游戏';
+// entity.gameName.en = 'good game';
+// entity._inspect();
+
+// entity.friends.push('f1','f2');
+// entity._inspect();
+// entity.friends = [];
+// entity._inspect();
+
+// console.log('f1 is my friend:',!!entity.friends2['f1']);
+// entity.friends2.createItem('f1');//默认值为1
+// console.log('f1 is my friend:',!!entity.friends2['f1']);
+// entity.friends2.f1 = 0;//改0也是可以的。
+// entity.friends2('f2');//尝试访问f2，不存在返回undefined;
+// entity.friends2('f2',true);//不存在则创建，
+// entity._inspect();
+
+// console.log('quests.count:',entity.quests.count);
+// var item = entity.quests.newItem();
+// item.type = '每日任务';
+// item.id = '1';
+// item["@x"] = 'xxx';
+// item.param.testexport = true;
+// changeLog = item.getChanges();
+
+// var item2 = entity.quests.newItem(changeLog);//导出的数据
+// var item3 = entity.quests.newItem(item._data);//完整数据。
+// item3.id = '2';
+// entity.quests.push(item3,item2);
+// console.log('quests.count:',entity.quests.count);
+// entity._inspect();
+// item.releaseMe();//没有加入数组的entity需要释放自己，释放后item不能再用。
+
+
+// entity.cards.count++;
+// console.log(entity.cards.count);
+// entity.cards('武器卡',true)('鬼影刀',true).id = '12';
+// entity('cards')('武器卡')('鬼影刀').count = 10;
+// entity('cards')('武器卡').count = 1;
+// entity.cards('fangju_cards',true)('miansha',true).id = '12';
+// entity.cards.fangju_cards.miansha.count = 9;
+// entity._inspect();
+
+// console.log(entity.exportData());
+// console.log(entity._data);
 
