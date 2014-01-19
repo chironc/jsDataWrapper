@@ -95,23 +95,25 @@ var utils = (function(){
             }
         }
     }
-
-    function _filterExportData(attributes,item,data){
+    
+    function _filterExportData(attributes,item,data,category){
         item = item || {};
+        var defaultCategoryItem = item.defaultCategory;
         attributes = attributes || {};
         var shortKeyToWholeKey = attributes.shortKeyToWholeKey || {};
         for (var sKey in data) {
             var key = shortKeyToWholeKey[sKey] || sKey;
             if (attributes[key]) {
-                if (attributes[key].notExport) 
+                var defaultCategoryAttr = attributes[key].defaultCategory;
+                if (!defaultCategoryAttr[category]) 
                     delete data[sKey];
                 else if (attributes[key].attributes || attributes[key].item) {
-                    _filterExportData(attributes[key].attributes,attributes[key].item,data[sKey]);
+                    _filterExportData(attributes[key].attributes,attributes[key].item,data[sKey],category);
                 }
-            } else if (item.notExport){
+            } else if (!defaultCategoryItem[category]){
                 delete data[sKey];
             } else if (item.attributes || item.item) {
-                _filterExportData(item.attributes,item.item,data[sKey]);
+                _filterExportData(item.attributes,item.item,data[sKey],category);
             }
         }
         return data;
@@ -150,6 +152,23 @@ function createEntityManager(attribute,item,propName) {
     var wholeKeyToShortKey = attribute.wholeKeyToShortKey;
     var typeForKey = attribute.typeForKey;
 
+    function getCategoryHash(obj) {
+        var defaultCategoryItem = obj.defaultCategory || ['export'];//默认有一个建export的类别
+        if (isArray(defaultCategoryItem)) {
+            var defaultCategoryObj = {};
+            for (var i=0; i < defaultCategoryItem.length;i++) {
+                defaultCategoryObj[defaultCategoryItem[i]] = true;
+            }
+            defaultCategoryItem = obj.defaultCategory = defaultCategoryObj;
+        } 
+        if (!isObject(defaultCategoryItem))
+            throw 'defaultCategory 设置错误';
+        return defaultCategoryItem;
+    }
+    attribute && getCategoryHash(attribute);
+    item && getCategoryHash(item);
+
+
     function createBooleanProperty(entity,prop,attr,configurable) {
         var changes = entity._changes;
         var key = attr.shortKey || prop;
@@ -160,7 +179,6 @@ function createEntityManager(attribute,item,propName) {
         utils.defineGetSetProperty(entity, prop, function () {
             return (this._data[key] === undefined)?!!defaultData:!!this._data[key];
         }, function (val) {
-            if (!attr.notExport) changes[key] = 1;
             var val = utils.isBoolean(val)?(val?1:0):(val === 'true'?1:0);
             if (val === defaultData) {
                 delete this._data[key];
@@ -180,7 +198,6 @@ function createEntityManager(attribute,item,propName) {
         utils.defineGetSetProperty(entity, prop, function () {
             return (this._data[key] === undefined)?defaultData:this._data[key];
         }, function (val) {
-            if (!attr.notExport) changes[key] = 1;
             val = utils.isNumber(val)?val:parseFloat(val);
             if (isNaN(val)) throw val + ' not a number';
             if (val === defaultData) {
@@ -201,7 +218,6 @@ function createEntityManager(attribute,item,propName) {
         utils.defineGetSetProperty(entity, prop, function () {
             return (this._data[key] === undefined)?defaultData:this._data[key];
         }, function (val) {
-            if (!attr.notExport) changes[key] = 1;
             val = utils.isString(val)?val:('' + val);
             if (val === defaultData) {
                 delete this._data[key];
@@ -219,7 +235,7 @@ function createEntityManager(attribute,item,propName) {
         typeForKey[prop] = 'Normal';
         var defaultData = JSON.stringify(attr.defaultData || {});
         utils.defineGetSetProperty(entity, prop, function () {
-            if (!attr.notExport && !changes[key]) {
+            if (!changes[key]) {
                 changes[key] = JSON.stringify(this._data[key]);
             }
             return (this._data[key] === undefined)?this._data[key]:(this._data[key] = JSON.parse(defaultData));
@@ -246,7 +262,6 @@ function createEntityManager(attribute,item,propName) {
         }, function (val) {
             if (!utils.isArray(val)) 
                 throw val + ' not a array';
-            if (!attr.notExport) changes[key] = 1;
             this._data[key] = val;
         },true,configurable || false);
         return true;
@@ -393,9 +408,9 @@ function createEntityManager(attribute,item,propName) {
     }
 
     function createDataProperty(entity) {
-        function exportData() {
+        function exportData(category) {
             var data = utils.deepClone(this._data);
-            return utils._filterExportData(attribute,item,data);
+            return utils._filterExportData(attribute,item,data,category || 'export');
         }
         utils.defineValueProperty(entity,'exportData',exportData,false,true,false);//可写，不可枚举，不可修改配置。
         utils.defineValueProperty(entity,'_data',{},true,false,false);//可写，不可枚举，不可修改配置。
@@ -558,7 +573,7 @@ function createEntityManager(attribute,item,propName) {
     }
     function createGetChangesProperty(entity) {
         //2种做法。1种是记录每个动作。2种是最后一次性做比对，第一种开发成本高，难理解，难维护，性能较优，第二种性能损耗高，开发成本低，容易理解和维护。
-        function getChanges() {
+        function getChanges(category) {
             var log = {};
             var sub_entity_list = this._sub_entity_list;
             var changes = this._changes;
@@ -575,8 +590,9 @@ function createEntityManager(attribute,item,propName) {
             //     delete sub_changes[key];
             // }
             for (var key in sub_entity_list) {
-                if (attribute && attribute[key] && attribute[key].notExport) continue;
-                if (attribute && !attribute[key] && item && item.notExport) continue;
+                var defaultCategoryAttr = getCategoryHash(attributes[key]);
+                if (attribute && attribute[key] && !attributes[key].defaultCategory[category]) continue;
+                if (attribute && !attribute[key] && item && !item.defaultCategory[category]) continue;
                 var sub_entity = sub_entity_list[key];
                 var sub = sub_entity.getChanges();
                 for (var hasChange in sub) {
@@ -731,91 +747,94 @@ var exports = exports || {};//兼容浏览器
 exports.createEntityManager = createEntityManager;
 
 
-
-// var attributes = {
-//     isMan : {                           //isMan将作为可访问名字。
-//         type : 'Boolean',               //表示isMan属性是布尔类型，布尔类型只支持设置值为true,false,'true','false',设置其他值将会抛出异常，区分大小写。
-//         shortKey : 'm',                 //实际数据采用m作为key，即{m:1}
-//         defaultData : true,             //如果没有这项，默认为false,当没有修改此属性值时，读取此项作为默认，同时不会存储到实际数据中。
-//         notExport : true,               //此项表示exportData或getChanges时不输出此项数据，可用于屏蔽一些服务端不希望给客户端看到的数据。
-//     },
-//     checkData : {                       //checkData将作为可访问名字。
-//         type : 'Function',              //表示checkData是一个函数。
-//         defaultData : function(){}      //如果没有这项，默认为 function(){};
-//     },
-//     checkData2 : function() {           //等同于上面的checkData
-//         this.isMan = true;              //this指针指向同级的对象。
-//     },
-//     level : {
-//         type : 'Number',                //表示数据的类型为数值。字符串将会尝试parseFloat转换。返回NaN则抛出异常。
-//         defaultData : 1                 //如果没有这项，默认为0
-//     },
-//     nickname : 'String',                //字符串类型，等同于nickname:{type:'String'},默认值为''。
-//     third_info : 'Object',              //简单对象类型。与上一行同理。默认值{}
-//     friends : 'Array',                  //简单数组类型，默认值:[],未实现更新算法，所以当数组发生改变，则会完整下发。不建议存储大数组。
-//     gameName : {
-//         type : 'Struct',                //带属性结构，必须同级存在attributes对象，
-//         attributes : {                  //此对象内容编写规范就是当前例子，即允许递归。对象的子对象的概念。
-//             en : 'String',
-//             cn : 'String'
-//         }
-//     },
-//     friends2 : {                        //带属性和任意key对象的结构，attributes可选，item可选，item默认为'String'即{type:'String'},item的编写规则等同于attributes下任意一项的内容。
-//         type : 'StructObject',          //例子是一个另一种方式表示好友，避免大数组，同时可以方便判断是否我的好友。
-//         item : {type:'Number',defaultData:1}
-//     },
-//     quests : {                          
-//         type : 'StructArray',           //用对象模拟的数组，
-//         item : {                        //必选项，表示每个元素的内容
-//             type : 'Struct',            //Struct，StructArray，StructObject三选一。
-//             //notExport : true,         //支持item带notExport标识表示不导出。
-//             attributes : {
-//                 type : 'String',        //此type不属于我们结构中的关键字，是支持的。
-//                 id   : 'String',
-//                 time : 'Number',
-//                 state: 'Number',
-//                 "@x" : 'String',        //支持特殊命名。
-//                 param : {
-//                     type : 'Object',
-//                     notExport : true
-//                 }
-//             }
-//         }
-//     },
-//     cards : {                           //一个多层复杂例子  
-//         type : 'StructObject',          //StructObject同时支持attribute和item
-//         attributes : {
-//             count : 'Number',
-//         },
-//         item : {
-//             type : 'StructObject',
-//             attributes : {
-//                 count : 'Number',
-//             },
-//             item : {
-//                 type : 'Struct',
-//                 attributes : {
-//                     id : {type:'String',notExport : true},
-//                     count : 'Number'
-//                 },
+//defaultCategory : ['export'],//默认
+//defaultCategory : [],//等同于notExport : true
+var attributes = {
+    isMan : {                           //isMan将作为可访问名字。
+        type : 'Boolean',               //表示isMan属性是布尔类型，布尔类型只支持设置值为true,false,'true','false',设置其他值将会抛出异常，区分大小写。
+        shortKey : 'm',                 //实际数据采用m作为key，即{m:1}
+        defaultData : true,             //如果没有这项，默认为false,当没有修改此属性值时，读取此项作为默认，同时不会存储到实际数据中。
+        defaultCategory : [],           //此项表示exportData或getChanges时不输出此项数据，可用于屏蔽一些服务端不希望给客户端看到的数据。
+    },
+    checkData : {                       //checkData将作为可访问名字。
+        type : 'Function',              //表示checkData是一个函数。
+        defaultData : function(){}      //如果没有这项，默认为 function(){};
+    },
+    checkData2 : function() {           //等同于上面的checkData
+        this.isMan = true;              //this指针指向同级的对象。
+    },
+    level : {
+        type : 'Number',                //表示数据的类型为数值。字符串将会尝试parseFloat转换。返回NaN则抛出异常。
+        defaultData : 1                 //如果没有这项，默认为0
+    },
+    nickname : 'String',                //字符串类型，等同于nickname:{type:'String'},默认值为''。
+    third_info : 'Object',              //简单对象类型。与上一行同理。默认值{}
+    friends : 'Array',                  //简单数组类型，默认值:[],未实现更新算法，所以当数组发生改变，则会完整下发。不建议存储大数组。
+    gameName : {
+        type : 'Struct',                //带属性结构，必须同级存在attributes对象，
+        attributes : {                  //此对象内容编写规范就是当前例子，即允许递归。对象的子对象的概念。
+            en : 'String',
+            cn : 'String'
+        }
+    },
+    friends2 : {                        //带属性和任意key对象的结构，attributes可选，item可选，item默认为'String'即{type:'String'},item的编写规则等同于attributes下任意一项的内容。
+        type : 'StructObject',          //例子是一个另一种方式表示好友，避免大数组，同时可以方便判断是否我的好友。
+        item : {type:'Number',defaultData:1}
+    },
+    quests : {                          
+        type : 'StructArray',           //用对象模拟的数组，
+        item : {                        //必选项，表示每个元素的内容
+            type : 'Struct',            //Struct，StructArray，StructObject三选一。
+            //notExport : true,         //支持item带notExport标识表示不导出。
+            attributes : {
+                type : 'String',        //此type不属于我们结构中的关键字，是支持的。
+                id   : 'String',
+                time : 'Number',
+                state: 'Number',
+                "@x" : 'String',        //支持特殊命名。
+                param : {
+                    type : 'Object',
+                    defaultCategory:[],
+//                    notExport : true
+                }
+            }
+        }
+    },
+    cards : {                           //一个多层复杂例子  
+        type : 'StructObject',          //StructObject同时支持attribute和item
+        attributes : {
+            count : 'Number',
+        },
+        item : {
+            type : 'StructObject',
+            attributes : {
+                count : 'Number',
+            },
+            item : {
+                type : 'Struct',
+                attributes : {
+                    id : {type:'String',defaultCategory : []},
+                    count : 'Number'
+                },
                 
-//             }
-//         }
-//     }
-// }
+            }
+        }
+    },
+    //??
+}
 
-// //var createEntityManager = require('entity').createEntityManager;
-// var manager = createEntityManager(attributes);
-// var realStorage = {m:1};
-// var entity = manager.createEntity(realStorage);//从数据库读数据。创建对象。
+//var createEntityManager = require('entity').createEntityManager;
+var manager = createEntityManager(attributes);
+var realStorage = {m:1};
+var entity = manager.createEntity(realStorage);//从数据库读数据。创建对象。
 
-// console.log('entity.isMan == true :',entity.isMan == true);//m是数据缩写，对应的就是isMan。而boolean存储的是0,1，1表示true，
-// entity._inspect();//输出用长名词的对象结构，包含解析所有默认值，由于console.log(entity)只能输出一堆getter,setter,特意设计此函数。
-// console.log('entity._data == realStorage :',entity._data == realStorage);
-// console.log(realStorage,entity.exportData());//不完全一样。exportData根据notExport标记生成。
-// entity.level = 10;
-// var changeLog = entity.getChanges();//返回距离上一次getChanges后的改动。
-// console.log(changeLog);
+console.log('entity.isMan == true :',entity.isMan == true);//m是数据缩写，对应的就是isMan。而boolean存储的是0,1，1表示true，
+entity._inspect();//输出用长名词的对象结构，包含解析所有默认值，由于console.log(entity)只能输出一堆getter,setter,特意设计此函数。
+console.log('entity._data == realStorage :',entity._data == realStorage);
+console.log(realStorage,entity.exportData());//不完全一样。exportData根据notExport标记生成。
+entity.level = 10;
+var changeLog = entity.getChanges();//返回距离上一次getChanges后的改动。
+console.log(changeLog);
 
 // var entity2 = manager.createEntity({});//创建一个新对象
 // entity2.mergeChanges(changeLog);//合并更新到另一个entity。例如客户端entity。或另一个服务器的entity。
