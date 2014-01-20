@@ -98,19 +98,18 @@ var utils = (function(){
     
     function _filterExportData(attributes,item,data,category){
         item = item || {};
-        var defaultCategoryItem = item.defaultCategory;
         attributes = attributes || {};
         var shortKeyToWholeKey = attributes.shortKeyToWholeKey || {};
         for (var sKey in data) {
             var key = shortKeyToWholeKey[sKey] || sKey;
-            if (attributes[key]) {
-                var defaultCategoryAttr = attributes[key].defaultCategory;
-                if (!defaultCategoryAttr[category]) 
+            var attr = attributes[key];
+            if (attr) {
+                if (attr.inCategory && !attr.inCategory(category)) 
                     delete data[sKey];
-                else if (attributes[key].attributes || attributes[key].item) {
-                    _filterExportData(attributes[key].attributes,attributes[key].item,data[sKey],category);
+                else if (attr.attributes || attr.item) {
+                    _filterExportData(attr.attributes,attr.item,data[sKey],category);
                 }
-            } else if (!defaultCategoryItem[category]){
+            } else if (item && item.inCategory && !item.inCategory(category)){
                 delete data[sKey];
             } else if (item.attributes || item.item) {
                 _filterExportData(item.attributes,item.item,data[sKey],category);
@@ -152,22 +151,34 @@ function createEntityManager(attribute,item,propName) {
     var wholeKeyToShortKey = attribute.wholeKeyToShortKey;
     var typeForKey = attribute.typeForKey;
 
-    function getCategoryHash(obj) {
-        var defaultCategoryItem = obj.defaultCategory || ['export'];//默认有一个建export的类别
-        if (isArray(defaultCategoryItem)) {
-            var defaultCategoryObj = {};
-            for (var i=0; i < defaultCategoryItem.length;i++) {
-                defaultCategoryObj[defaultCategoryItem[i]] = true;
+    function createCategoryHashFunc(obj) {
+        if (!obj || !utils.isObject(obj)) return;
+        if (obj.inCategory) return;//如果未建立则建立，如果已建立则返回，同时如果结构说明已提供，则直接使用
+        var categorysItem = obj.categorys || [];//默认有一个建export的类别
+        if (utils.isArray(categorysItem)) {
+            var categorysObj = {};
+            for (var i=categorysItem.length-1; i >= 0 ;i--) {
+                categorysObj[categorysItem[i]] = true;
             }
-            defaultCategoryItem = obj.defaultCategory = defaultCategoryObj;
+            categorysItem = categorysObj;
         } 
-        if (!isObject(defaultCategoryItem))
-            throw 'defaultCategory 设置错误';
-        return defaultCategoryItem;
-    }
-    attribute && getCategoryHash(attribute);
-    item && getCategoryHash(item);
+        if (!utils.isObject(categorysItem))
+            categorysItem = null;
 
+        var inCategory = function(category) {
+            if (!categorysItem) return false;
+            if (category.length == 0) return true;
+            for (var i = category.length-1;i>=0;i--) {
+                if (categorysItem[category[i]])
+                    return true;
+            }
+            return false;
+        }
+        utils.defineValueProperty(obj,'inCategory',inCategory);
+    }
+    for (var key in attribute)
+        createCategoryHashFunc(attribute[key]);
+    item && createCategoryHashFunc(item);
 
     function createBooleanProperty(entity,prop,attr,configurable) {
         var changes = entity._changes;
@@ -410,8 +421,16 @@ function createEntityManager(attribute,item,propName) {
     function createDataProperty(entity) {
         function exportData(category) {
             var data = utils.deepClone(this._data);
-            return utils._filterExportData(attribute,item,data,category || 'export');
+            if (utils.isArray(category))
+                return utils._filterExportData(attribute,item,data,category);
+            else 
+                return utils._filterExportData(attribute,item,data,Array.prototype.slice.call(arguments));
+            
         }
+        function exportAllData() {
+            return utils.deepClone(this._data);
+        }
+        utils.defineValueProperty(entity,'exportAllData',exportAllData,false,true,false);//可写，不可枚举，不可修改配置。
         utils.defineValueProperty(entity,'exportData',exportData,false,true,false);//可写，不可枚举，不可修改配置。
         utils.defineValueProperty(entity,'_data',{},true,false,false);//可写，不可枚举，不可修改配置。
     }
@@ -538,7 +557,6 @@ function createEntityManager(attribute,item,propName) {
             for (var lKey in entity) {//不能根据data，因为default不显示
                 if (attribute[lKey]) continue; 
                 if (lKey == 'createItem' || lKey == 'hasItem' || lKey == 'keyForMe' || lKey == 'deleteItem' || lKey == 'releaseMe' || lKey == 'forEachItem' || lKey == 'exportData') continue;
-                console.log(lKey);
                 var ret = fn(lKey,entity[lKey]) || '';
                 if (ret.indexOf('remove')!=-1) {
                     entity.deleteItem(lKey);
@@ -573,26 +591,15 @@ function createEntityManager(attribute,item,propName) {
     }
     function createGetChangesProperty(entity) {
         //2种做法。1种是记录每个动作。2种是最后一次性做比对，第一种开发成本高，难理解，难维护，性能较优，第二种性能损耗高，开发成本低，容易理解和维护。
-        function getChanges(category) {
+        function getChangesImpl(fliter,category) {
             var log = {};
             var sub_entity_list = this._sub_entity_list;
             var changes = this._changes;
 
             var realData = this._data;
-            // for (var key in sub_changes) {
-            //     var sub_entity = sub_entity_list[sub_changes[key]];
-            //     if (!sub_entity) continue;
-            //     var sub = sub_entity.getChanges();
-            //     for (var hasChange in sub) {
-            //         log[key] = sub;
-            //         break;
-            //     }
-            //     delete sub_changes[key];
-            // }
             for (var key in sub_entity_list) {
-                var defaultCategoryAttr = getCategoryHash(attributes[key]);
-                if (attribute && attribute[key] && !attributes[key].defaultCategory[category]) continue;
-                if (attribute && !attribute[key] && item && !item.defaultCategory[category]) continue;
+                if (fliter && attribute && attribute[key] && attributes[key].inCategory && !attributes[key].inCategory(category)) continue;
+                if (fliter && attribute && !attribute[key] && item && item.inCategory && !item.inCategory(category)) continue;
                 var sub_entity = sub_entity_list[key];
                 var sub = sub_entity.getChanges();
                 for (var hasChange in sub) {
@@ -613,8 +620,18 @@ function createEntityManager(attribute,item,propName) {
             }
             
             return log;
+        }  
+        function getChanges(category) {
+            if (utils.isArray(category))
+                return getChangesImpl(true,category);
+            else
+                return getChangesImpl(true,Array.prototype.slice.call(arguments));
+        }
+        function getAllChanges() {
+            return getChangesImpl(false);
         }
         utils.defineValueProperty(entity,'getChanges',getChanges,false,false,false);//不可写，不可枚举，可修改配置。
+        utils.defineValueProperty(entity,'getAllChanges',getAllChanges,false,false,false);//不可写，不可枚举，可修改配置。
     }
     function createMergeChangesProperty(entity) {
         var sub_entity_list = entity._sub_entity_list;
@@ -743,98 +760,102 @@ function createEntityManager(attribute,item,propName) {
     return { createEntity : dequeueEntity }
 }
 
-var exports = exports || {};//兼容浏览器
-exports.createEntityManager = createEntityManager;
+// var exports = exports || {};//兼容浏览器
+// exports.createEntityManager = createEntityManager;
 
 
-//defaultCategory : ['export'],//默认
-//defaultCategory : [],//等同于notExport : true
-var attributes = {
-    isMan : {                           //isMan将作为可访问名字。
-        type : 'Boolean',               //表示isMan属性是布尔类型，布尔类型只支持设置值为true,false,'true','false',设置其他值将会抛出异常，区分大小写。
-        shortKey : 'm',                 //实际数据采用m作为key，即{m:1}
-        defaultData : true,             //如果没有这项，默认为false,当没有修改此属性值时，读取此项作为默认，同时不会存储到实际数据中。
-        defaultCategory : [],           //此项表示exportData或getChanges时不输出此项数据，可用于屏蔽一些服务端不希望给客户端看到的数据。
-    },
-    checkData : {                       //checkData将作为可访问名字。
-        type : 'Function',              //表示checkData是一个函数。
-        defaultData : function(){}      //如果没有这项，默认为 function(){};
-    },
-    checkData2 : function() {           //等同于上面的checkData
-        this.isMan = true;              //this指针指向同级的对象。
-    },
-    level : {
-        type : 'Number',                //表示数据的类型为数值。字符串将会尝试parseFloat转换。返回NaN则抛出异常。
-        defaultData : 1                 //如果没有这项，默认为0
-    },
-    nickname : 'String',                //字符串类型，等同于nickname:{type:'String'},默认值为''。
-    third_info : 'Object',              //简单对象类型。与上一行同理。默认值{}
-    friends : 'Array',                  //简单数组类型，默认值:[],未实现更新算法，所以当数组发生改变，则会完整下发。不建议存储大数组。
-    gameName : {
-        type : 'Struct',                //带属性结构，必须同级存在attributes对象，
-        attributes : {                  //此对象内容编写规范就是当前例子，即允许递归。对象的子对象的概念。
-            en : 'String',
-            cn : 'String'
-        }
-    },
-    friends2 : {                        //带属性和任意key对象的结构，attributes可选，item可选，item默认为'String'即{type:'String'},item的编写规则等同于attributes下任意一项的内容。
-        type : 'StructObject',          //例子是一个另一种方式表示好友，避免大数组，同时可以方便判断是否我的好友。
-        item : {type:'Number',defaultData:1}
-    },
-    quests : {                          
-        type : 'StructArray',           //用对象模拟的数组，
-        item : {                        //必选项，表示每个元素的内容
-            type : 'Struct',            //Struct，StructArray，StructObject三选一。
-            //notExport : true,         //支持item带notExport标识表示不导出。
-            attributes : {
-                type : 'String',        //此type不属于我们结构中的关键字，是支持的。
-                id   : 'String',
-                time : 'Number',
-                state: 'Number',
-                "@x" : 'String',        //支持特殊命名。
-                param : {
-                    type : 'Object',
-                    defaultCategory:[],
-//                    notExport : true
-                }
-            }
-        }
-    },
-    cards : {                           //一个多层复杂例子  
-        type : 'StructObject',          //StructObject同时支持attribute和item
-        attributes : {
-            count : 'Number',
-        },
-        item : {
-            type : 'StructObject',
-            attributes : {
-                count : 'Number',
-            },
-            item : {
-                type : 'Struct',
-                attributes : {
-                    id : {type:'String',defaultCategory : []},
-                    count : 'Number'
-                },
+// //categorys : ['export'],//默认
+// //categorys : [],//等同于notExport : true
+// var attributes = {
+//     isMan : {                           //isMan将作为可访问名字。
+//         type : 'Boolean',               //表示isMan属性是布尔类型，布尔类型只支持设置值为true,false,'true','false',设置其他值将会抛出异常，区分大小写。
+//         shortKey : 'm',                 //实际数据采用m作为key，即{m:1}
+//         defaultData : true,             //如果没有这项，默认为false,当没有修改此属性值时，读取此项作为默认，同时不会存储到实际数据中。
+//         categorys : ['export','man'],           //此项表示exportData或getChanges时不输出此项数据，可用于屏蔽一些服务端不希望给客户端看到的数据。
+//     },
+//     checkData : {                       //checkData将作为可访问名字。
+//         type : 'Function',              //表示checkData是一个函数。
+//         defaultData : function(){}      //如果没有这项，默认为 function(){};
+//     },
+//     checkData2 : function() {           //等同于上面的checkData
+//         this.isMan = true;              //this指针指向同级的对象。
+//     },
+//     level : {
+//         type : 'Number',                //表示数据的类型为数值。字符串将会尝试parseFloat转换。返回NaN则抛出异常。
+//         defaultData : 1,                 //如果没有这项，默认为0
+//         categorys : ['export','man'],
+//     },
+//     nickname : 'String',                //字符串类型，等同于nickname:{type:'String'},默认值为''。
+//     third_info : 'Object',              //简单对象类型。与上一行同理。默认值{}
+//     friends : 'Array',                  //简单数组类型，默认值:[],未实现更新算法，所以当数组发生改变，则会完整下发。不建议存储大数组。
+//     gameName : {
+//         type : 'Struct',                //带属性结构，必须同级存在attributes对象，
+//         attributes : {                  //此对象内容编写规范就是当前例子，即允许递归。对象的子对象的概念。
+//             en : 'String',
+//             cn : 'String'
+//         },
+//         categorys : ['man'],
+//     },
+//     friends2 : {                        //带属性和任意key对象的结构，attributes可选，item可选，item默认为'String'即{type:'String'},item的编写规则等同于attributes下任意一项的内容。
+//         type : 'StructObject',          //例子是一个另一种方式表示好友，避免大数组，同时可以方便判断是否我的好友。
+//         item : {type:'Number',defaultData:1},
+//         categorys : [],
+//     },
+//     quests : {                          
+//         type : 'StructArray',           //用对象模拟的数组，
+//         item : {                        //必选项，表示每个元素的内容
+//             type : 'Struct',            //Struct，StructArray，StructObject三选一。
+//             //notExport : true,         //支持item带notExport标识表示不导出。
+//             attributes : {
+//                 type : 'String',        //此type不属于我们结构中的关键字，是支持的。
+//                 id   : 'String',
+//                 time : 'Number',
+//                 state: 'Number',
+//                 "@x" : 'String',        //支持特殊命名。
+//                 param : {
+//                     type : 'Object',
+//                     categorys:[],
+// //                    notExport : true
+//                 }
+//             }
+//         }
+//     },
+//     cards : {                           //一个多层复杂例子  
+//         type : 'StructObject',          //StructObject同时支持attribute和item
+//         attributes : {
+//             count : 'Number',
+//         },
+//         item : {
+//             type : 'StructObject',
+//             attributes : {
+//                 count : 'Number',
+//             },
+//             item : {
+//                 type : 'Struct',
+//                 attributes : {
+//                     id : {type:'String',categorys : []},
+//                     count : 'Number'
+//                 },
                 
-            }
-        }
-    },
-    //??
-}
+//             }
+//         }
+//     },
+//     //??
+// }
 
 //var createEntityManager = require('entity').createEntityManager;
-var manager = createEntityManager(attributes);
-var realStorage = {m:1};
-var entity = manager.createEntity(realStorage);//从数据库读数据。创建对象。
+// var manager = createEntityManager(attributes);
+// var realStorage = {m:1};
+// var entity = manager.createEntity(realStorage);//从数据库读数据。创建对象。
 
-console.log('entity.isMan == true :',entity.isMan == true);//m是数据缩写，对应的就是isMan。而boolean存储的是0,1，1表示true，
-entity._inspect();//输出用长名词的对象结构，包含解析所有默认值，由于console.log(entity)只能输出一堆getter,setter,特意设计此函数。
-console.log('entity._data == realStorage :',entity._data == realStorage);
-console.log(realStorage,entity.exportData());//不完全一样。exportData根据notExport标记生成。
-entity.level = 10;
-var changeLog = entity.getChanges();//返回距离上一次getChanges后的改动。
-console.log(changeLog);
+//console.log('entity.isMan == true :',entity.isMan == true);//m是数据缩写，对应的就是isMan。而boolean存储的是0,1，1表示true，
+//entity._inspect();//输出用长名词的对象结构，包含解析所有默认值，由于console.log(entity)只能输出一堆getter,setter,特意设计此函数。
+//console.log('entity._data == realStorage :',entity._data == realStorage);
+//console.log(realStorage,entity.exportData());//不完全一样。exportData根据notExport标记生成。
+// console.log(entity.exportData());
+// entity.level = 10;
+// var changeLog = entity.getChanges();//返回距离上一次getChanges后的改动。
+// console.log(changeLog);
 
 // var entity2 = manager.createEntity({});//创建一个新对象
 // entity2.mergeChanges(changeLog);//合并更新到另一个entity。例如客户端entity。或另一个服务器的entity。
@@ -851,6 +872,18 @@ console.log(changeLog);
 
 // entity.gameName.cn = '好游戏';
 // entity.gameName.en = 'good game';
+// console.log(entity.exportData());
+// console.log(entity.exportData('man'));
+// console.log(entity.exportData(['export']));
+
+
+//3个级别数据获取，应用于导出数据和获取更新数据
+// 1.完整数据。等同于复制对象    exportAllData, getAllChanges
+// 2.所有可视化数据             exportData(), getChanges()
+// 3.特定可视化数据，一个或多个。exportData(category,...), getChanges(category,...) exportData([category,...]), getChanges([category,...]) 
+
+
+
 // entity._inspect();
 
 // entity.friends.push('f1','f2');
